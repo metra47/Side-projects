@@ -1,0 +1,76 @@
+import os
+import socket
+import concurrent.futures
+import threading
+
+stop_scanning = threading.Event()  
+open_ports = []  # this is an array to store the open ports
+
+choice = input("Do you have a domain name or an IP address? \nType 'domain' for domain name \nType 'ip' for IP address: ").strip().lower()
+
+if choice == "domain":
+    domain = input("What is the domain? ")
+    try:
+        addr_info = socket.getaddrinfo(domain, None)  
+        ip = addr_info[0][4][0]  # extracts the IP address
+        print(f"Resolved IP for {domain} is {ip}")
+    except socket.gaierror:
+        print("Could not resolve the domain name.")
+        exit()
+elif choice == "ip":
+    ip = input("Enter IP Address: ")
+else:
+    print("Invalid choice.")
+    exit()
+
+def tryport(ip, port):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # creates a TCP socket
+    sock.settimeout(1) 
+    result = sock.connect_ex((ip, port))  
+    sock.close()  
+    return result == 0  # returns True if port is open
+
+def scan_port(port):
+    if tryport(ip, port):  # if port is open
+        open_ports.append(port)  # add it to the list
+        os.system("cls")
+        print(f"Port {port} is open")  # print open port message
+        stop_scanning.set()  # stop scanning new ports for now
+        input("Press any key to start scanning again")  # wait for user to continue
+    else:
+        print(f"Port {port} is closed")  # port is closed, print that
+
+# using 50 threads to scan ports faster instead of one by one
+with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
+    executor.map(scan_port, range(1, 1024))  # scan ports from 1 to 1023
+
+print("\nScan finished")
+
+if open_ports:
+    print("Open ports are:")
+    for port in open_ports:
+        print(f"\n- Port {port}")  # print the open ports found
+else:
+    print("No open ports")
+
+# now trying to grab banners for each open port
+
+def grab_banner(ip, port):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  # create socket
+    sock.settimeout(1) 
+    result = sock.connect_ex((ip, port))  
+    if result == 0:
+        try:
+            banner_bytes = sock.recv(1024)  # receive up to 1024 bytes
+            banner = banner_bytes.decode()  # decode bytes to string
+        except Exception:
+            banner = "Failed to decode banner"
+    else:
+        banner = "No banner or failed to connect"
+    sock.close()  
+    return banner  # return banner or error message
+
+for port in open_ports:
+    print(f"\nLooking for banner on port {port}")
+    banner = grab_banner(ip, port)
+    print(f"Banner for port {port} + {banner}")
